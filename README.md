@@ -2,7 +2,7 @@
 
 VALORANT Helper is a utility tool designed for VALORANT players. It provides the following features:
 
-![VALORANT Helper Screenshot](https://media.discordapp.net/attachments/985430380297457664/1335497773390499870/image.png?ex=67a062b9&is=679f1139&hm=e7ae62914711bf6bedbf1595b3a2147f669929ecbb3e8b3ef1e6abca0929277f&=&format=webp&quality=lossless)
+![VALORANT Helper Screenshot](https://media.discordapp.net/attachments/1313419200580030494/1336572467778551808/image.png?ex=67a44b9c&is=67a2fa1c&hm=f825124701295cde11d50360170fc984af0f7ede9f6a93e301ac0a56af7ed273&=&format=webp&quality=lossless&width=207&height=334)
 
 ## Features
 
@@ -12,13 +12,13 @@ Allows you to check whether you are on the attacking or defending side during ch
 ### Dodge Game
 Instantly cancels a match without dropping the game. This helps avoid unwanted matchups.
 
+### Agent Pick
+Instalock agent
+
 ### Remove All Friends
 Removes all friends from your friend list at once. Useful for cleaning up your friend list.
 
-### Auto VC
-Keeps the VC key (V) pressed automatically while the VALORANT tab is open. This ensures that voice chat remains active.
-
-### Kill VALORANT
+### Multiple VALORANT
 Enables multiple instances of VALORANT to run simultaneously. This allows for managing multiple accounts at the same time.
 
 ## Usage
@@ -35,4 +35,4 @@ Enables multiple instances of VALORANT to run simultaneously. This allows for ma
 
 ## License
 
-This project is provided under the [MIT License](LICENSE).
+This project is provided under the [GPL License](LICENSE).
