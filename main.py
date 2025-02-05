@@ -1,200 +1,234 @@
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QPushButton, QVBoxLayout, QWidget, QFileDialog
-from PyQt5.QtGui import QFont, QColor, QPalette
-from PyQt5.QtCore import Qt, QThread
-from valclient.client import Client
-from internal import ValorantInternal
-import pyautogui
-import pygetwindow as gw
-import time
-import sys
+import flet
+from flet import (
+    Page,
+    Container,
+    Column,
+    Row,
+    Text,
+    ElevatedButton,
+    IconButton,
+    Theme,
+    ThemeMode,
+    Colors,
+    Icons,
+    padding,
+    alignment,
+    GestureDetector,
+    DragStartEvent,
+    DragUpdateEvent,
+    Switch,
+    Dropdown,
+    dropdown,
+)
+import threading
 import os
-import subprocess
 import psutil
+import time
 
-client = Client(region="ap")
-valorant_internal = ValorantInternal()
-
-try:
-    client.activate()
-except Exception as e:
-    print(f"Failed to activate client: {e}")
+from api import Client
+from internal_api import ValorantInternal
+from game_utils import fetch_game_state
+from agent_mapping import AGENT_MAPPING
 
 
-class AutoVCThread(QThread):
-    def __init__(self):
-        super().__init__()
-        self.running = False
-        self.v_key_pressed = False
+def main(page: Page):
+    root_dir = os.path.dirname(os.path.abspath(__file__))
+    page.title = "VAL-Helper"
+    page.window.width = 300
+    page.window.height = 480
+    page.window.frameless = True
+    page.window.icon = os.path.join(root_dir, "assets", "icon.ico")
+    page.window.top = 100
+    page.window.left = 100
+    page.padding = 8
+    page.theme_mode = ThemeMode.DARK
+    page.dark_theme = Theme(color_scheme_seed=Colors.DEEP_PURPLE_800)
 
-    def run(self):
-        while self.running:
-            valorant_windows = gw.getWindowsWithTitle("VALORANT")
-            if valorant_windows and valorant_windows[0].isActive:
-                if not self.v_key_pressed:
-                    pyautogui.keyDown('v')
-                    self.v_key_pressed = True
-            else:
-                if self.v_key_pressed:
-                    pyautogui.keyUp('v')
-                    self.v_key_pressed = False
-            time.sleep(0.1)
+    client = Client(region="ap")
+    valorant_internal = ValorantInternal()
 
-    def stop(self):
-        if self.v_key_pressed:
-            pyautogui.keyUp('v')
-        self.running = False
+    try:
+        client.activate()
+    except Exception as e:
+        print(f"Failed to activate client: {e}")
 
+    result_text = Text("", color=Colors.GREY_300, text_align="center")
 
-class MainWindow(QMainWindow):
-    def __init__(self):
-        super().__init__()
+    auto_pick_enabled = False
+    selected_agent = "None"
+    pick_delay = 5
 
-        self.setWindowTitle("VALORANT Helper")
-        self.setGeometry(200, 200, 400, 450)
+    auto_pick_switch = Switch(label="Auto Pick Agent", value=False)
+    agent_dropdown = Dropdown(
+        options=[dropdown.Option(agent) for agent in AGENT_MAPPING.keys()],
+        value="None",
+        width=150,
+        disabled=True,
+    )
 
-        self.central_widget = QWidget()
-        self.setCentralWidget(self.central_widget)
+    def auto_pick_changed(e):
+        nonlocal auto_pick_enabled
+        auto_pick_enabled = auto_pick_switch.value
+        agent_dropdown.disabled = not auto_pick_enabled
+        page.update()
 
-        self.layout = QVBoxLayout(self.central_widget)
-        self.layout.setSpacing(10)
-        self.layout.setContentsMargins(20, 20, 20, 20)
+    auto_pick_switch.on_change = auto_pick_changed
 
+    def agent_selected(e):
+        nonlocal selected_agent
+        selected_agent = agent_dropdown.value
+        page.update()
 
-        self.check_button = QPushButton("Check Side")
-        self.check_button.setFont(QFont("Arial", 12))
-        self.check_button.clicked.connect(self.check_side)
-        self.layout.addWidget(self.check_button)
+    agent_dropdown.on_change = agent_selected
 
-        self.dodge_button = QPushButton("Dodge Game")
-        self.dodge_button.setFont(QFont("Arial", 12))
-        self.dodge_button.setStyleSheet("background-color: #EBCB8B; color: #2E3440;") # Nord Theme の黄色
-        self.dodge_button.clicked.connect(self.dodge_game)
-        self.layout.addWidget(self.dodge_button)
+    def auto_pick_task():
+        while True:
+            if auto_pick_enabled:
+                try:
+                    game_state = fetch_game_state(client)
+                    if game_state == "PREGAME":
+                        time.sleep(pick_delay)
+                        agent_id = AGENT_MAPPING[selected_agent]
+                        client.pregame_select_character(agent_id)
+                        client.pregame_lock_character(agent_id)
+                        result_text.value = f"Agent {selected_agent} selected!"
+                        page.update()
+                except Exception as e:
+                    result_text.value = f"Auto-pick Error: {e}"
+                    page.update()
+            time.sleep(1)
 
-        self.remove_friends_button = QPushButton("Remove All Friends")
-        self.remove_friends_button.setFont(QFont("Arial", 12))
-        self.remove_friends_button.setStyleSheet("background-color: #8FBCBB; color: #2E3440;") # Nord Theme のシアン
-        self.remove_friends_button.clicked.connect(self.remove_all_friends)
-        self.layout.addWidget(self.remove_friends_button)
+    threading.Thread(target=auto_pick_task, daemon=True).start()
 
-        self.autovc_button = QPushButton("AutoVC: OFF")
-        self.autovc_button.setFont(QFont("Arial", 12))
-        self.autovc_button.setStyleSheet("background-color: green; color: white;")
-        self.autovc_button.clicked.connect(self.toggle_autovc)
-        self.layout.addWidget(self.autovc_button)
+    drag_start_x = 0
+    drag_start_y = 0
 
-        self.kill_valorant_button = QPushButton("Kill Valorant")
-        self.kill_valorant_button.setFont(QFont("Arial", 12))
-        self.kill_valorant_button.setStyleSheet("background-color: #D08770; color: white;")
-        self.kill_valorant_button.clicked.connect(self.kill_bootstrap)
-        self.layout.addWidget(self.kill_valorant_button)
+    def close_app(e):
+        page.window.close()
 
+    close_button = IconButton(icon=Icons.CLOSE, icon_color=Colors.RED_500, on_click=close_app)
 
-        self.result_label = QLabel("Result will appear here")
-        self.result_label.setFont(QFont("Arial", 14))
-        self.result_label.setAlignment(Qt.AlignCenter)
-        self.result_label.setWordWrap(True)
-        self.layout.addWidget(self.result_label)
-        self.result_label.setStyleSheet("color: #A3BE8C;")
+    def reload_client(e):
+        try:
+            client.activate()
+            result_text.value = "Client reloaded successfully!"
+        except Exception as err:
+            result_text.value = f"Error: {err}"
+        page.update()
 
+    reload_button = IconButton(icon=Icons.REFRESH, icon_color=Colors.BLUE_ACCENT_400, on_click=reload_client)
 
-        self.set_custom_style()
-        self.autovc_thread = AutoVCThread()
-
-
-    def set_result_text(self, text, is_error=False):
-        self.result_label.setText(text)
-        if is_error:
-            self.result_label.setStyleSheet("color: #BF616A;")
-        else:
-            self.result_label.setStyleSheet("color: #A3BE8C;")
-
-
-    def check_side(self):
+    def check_side_click(e):
         try:
             ally = client.pregame_fetch_match()['AllyTeam']
-            ally_result = "Null"
             ally_team = ally['TeamID']
-            if ally_team == 'Red':
-                ally_result = 'Attacker'
-            elif ally_team == 'Blue':
-                ally_result = 'Defender'
-            else:
-                ally_result = 'Unknown'
+            ally_result = "Attacker" if ally_team == 'Red' else "Defender" if ally_team == 'Blue' else "Unknown"
+            result_text.value = f"Your side: {ally_result}"
+        except Exception as err:
+            result_text.value = f"Error: {err}"
+        page.update()
 
-            self.set_result_text(f"Your side: {ally_result}")
-        except Exception as e:
-            self.set_result_text(f"Error: {e}", is_error=True)
+    check_side_button = ElevatedButton("Check Side", bgcolor=Colors.INDIGO_500, width=260, on_click=check_side_click)
 
-
-    def dodge_game(self):
+    def dodge_game_click(e):
         try:
             client.pregame_quit_match()
-            self.set_result_text("Successfully dodged the game!")
-        except Exception as e:
-            self.set_result_text(f"Error: {e}", is_error=True)
+            result_text.value = "Successfully dodged the game!"
+        except Exception as err:
+            result_text.value = f"Error: {err}"
+        page.update()
 
+    dodge_game_button = ElevatedButton("Dodge Game", bgcolor=Colors.AMBER_600, color=Colors.BLACK, width=260, on_click=dodge_game_click)
 
-    def remove_all_friends(self):
+    def remove_all_friends(e):
+        def remove_friends():
+            try:
+                friends = valorant_internal.get_friends().friends
+                if not friends:
+                    result_text.value = "No friends to remove."
+                    page.update()
+                    return
+
+                for friend in friends:
+                    valorant_internal.remove_friend(friend)
+
+                result_text.value = f"Friends removed successfully."
+            except Exception as err:
+                result_text.value = f"Error: {err}"
+            page.update()
+
+        threading.Thread(target=remove_friends, daemon=True).start()
+
+    remove_friends_button = ElevatedButton("Remove Friends", bgcolor=Colors.RED_700, color=Colors.WHITE, width=260, on_click=remove_all_friends)
+
+    # VALORANTを終了
+    def multiple_valorant_click(e):
         try:
-            friends = valorant_internal.get_friends().friends
-            if not friends:
-                self.set_result_text("No friends to remove.")
-                return
-
-            for friend in friends:
-                status_code = valorant_internal.remove_friend(friend)
-                if status_code == 200:
-                    print(f"Removed friend: {friend.gamename}")
-                else:
-                    print(f"Failed to remove friend: {friend.gamename}, Status Code: {status_code}")
-
-            self.set_result_text("All friends removed successfully.")
-        except Exception as e:
-            self.set_result_text(f"Error: {e}", is_error=True)
-
-
-    def toggle_autovc(self):
-        if self.autovc_thread.running:
-            self.autovc_thread.stop()
-            self.autovc_button.setText("AutoVC: OFF")
-            self.autovc_button.setStyleSheet("background-color: green; color: white;")
-        else:
-            self.autovc_thread.running = True
-            self.autovc_thread.start()
-            self.autovc_button.setText("AutoVC: ON")
-            self.autovc_button.setStyleSheet("background-color: red; color: white;")
-
-
-    def kill_bootstrap(self):
-        try:
+            killed = False
             for proc in psutil.process_iter(['pid', 'name']):
                 if proc.info['name'] == "VALORANT.exe":
                     proc.kill()
-                    self.set_result_text("VALORANT process killed successfully.")
-                    return
-            self.set_result_text("VALORANT process not found.", is_error=True)
-        except Exception as e:
-            self.set_result_text(f"Error: {e}", is_error=True)
+                    killed = True
+                    break
+            result_text.value = "Multiple Valorant Ready!" if killed else "VALORANT not found."
+        except Exception as err:
+            result_text.value = f"Error: {err}"
+        page.update()
 
+    multiple_valorant_button = ElevatedButton("Multiple Valorant", bgcolor=Colors.PINK_ACCENT_700, color=Colors.WHITE, width=260, on_click=multiple_valorant_click)
 
-    def set_custom_style(self):
-        palette = self.palette()
-        palette.setColor(QPalette.Window, QColor("#2E3440"))
-        palette.setColor(QPalette.WindowText, QColor("#D8DEE9"))
-        self.setPalette(palette)
+    def header_pan_start(e: DragStartEvent):
+        nonlocal drag_start_x, drag_start_y
+        drag_start_x = e.local_x
+        drag_start_y = e.local_y
 
-        self.central_widget.setStyleSheet("background-color: #2E3440; color: #D8DEE9;")
-        self.check_button.setStyleSheet(f"background-color: #4C566A; color: #D8DEE9; border: 1px solid #4C566A; border-radius: 5px; padding: 8px;")
-        self.dodge_button.setStyleSheet(f"background-color: #EBCB8B; color: #2E3440; border: 1px solid #EBCB8B; border-radius: 5px; padding: 8px;")
-        self.remove_friends_button.setStyleSheet(f"background-color: #8FBCBB; color: #2E3440; border: 1px solid #8FBCBB; border-radius: 5px; padding: 8px;")
-        self.autovc_button.setStyleSheet(f"QPushButton{{background-color: green; color: white; border: 1px solid green; border-radius: 5px; padding: 8px;}} QPushButton:hover{{background-color: #A3BE8C; border: 1px solid #A3BE8C;}} QPushButton:checked{{background-color: red;}}") # ホバー時の色変更と AutoVC ON 時の色を CSS で定義
-        self.kill_valorant_button.setStyleSheet(f"background-color: #D08770; color: white; border: 1px solid #D08770; border-radius: 5px; padding: 8px;")
-        self.result_label.setStyleSheet(f"color: #A3BE8C;")
+    def header_pan_update(e: DragUpdateEvent):
+        nonlocal drag_start_x, drag_start_y
+        page.window.left = max(0, page.window.left + e.delta_x)
+        page.window.top = max(0, page.window.top + e.delta_y)
+        page.update()
+
+    custom_header = GestureDetector(
+        on_pan_start=header_pan_start,
+        on_pan_update=header_pan_update,
+        drag_interval=10,
+        content=Container(
+            content=Row(
+                controls=[
+                    Text("VAL-Helper", color=Colors.WHITE, weight="bold"),
+                    Row(
+                        controls=[reload_button, close_button], 
+                        alignment="end"
+                    )
+                ],
+                alignment="spaceBetween"
+            ),
+            expand=True,
+            height=32,
+        ),
+    )
+
+    page.add(
+        Column(
+            [
+                custom_header,
+                auto_pick_switch,
+                agent_dropdown,
+                check_side_button,
+                dodge_game_button,
+                remove_friends_button,
+                multiple_valorant_button,
+                Container(
+                    content=result_text,
+                    alignment=alignment.center,
+                    padding=padding.only(top=10),
+                ),
+            ],
+            alignment="center",
+            horizontal_alignment="center",
+        )
+    )
 
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec_())
+    flet.app(target=main)
