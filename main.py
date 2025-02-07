@@ -35,7 +35,7 @@ def main(page: Page):
     root_dir = os.path.dirname(os.path.abspath(__file__))
     page.title = "VAL-Helper"
     page.window.width = 300
-    page.window.height = 480
+    page.window.height = 460  # Increased height
     page.window.frameless = True
     page.window.icon = os.path.join(root_dir, "assets", "icon.ico")
     page.window.top = 100
@@ -53,6 +53,8 @@ def main(page: Page):
         print(f"Failed to activate client: {e}")
 
     result_text = Text("", color=Colors.GREY_300, text_align="center")
+    status_text = Text("Status: Initializing...", color=Colors.YELLOW_200, text_align="center")
+    server_location_text = Text("", color=Colors.GREEN_200, text_align="center") # Initialize as empty
 
     auto_pick_enabled = False
     selected_agent = "None"
@@ -100,6 +102,39 @@ def main(page: Page):
 
     threading.Thread(target=auto_pick_task, daemon=True).start()
 
+    def update_status():
+        while True:
+            try:
+                game_state = fetch_game_state(client)
+                status_text.value = game_state
+
+                server_location_text.value = ""
+                try:
+                    if game_state == "PREGAME":
+                        match_info = client.pregame_fetch_match()
+                    elif game_state == "INGAME":
+                        match_info = client.coregame_fetch_match()
+                    else:
+                        match_info = None
+
+                    if match_info:
+                        game_pod_id = match_info.get("GamePodID", "Unknown")
+                        location = game_pod_id.split("-")[-2] if game_pod_id != "Unknown" and len(game_pod_id.split("-")) > 2 else "Unknown"
+                        server_location_text.value = location
+                    else:
+                        server_location_text.value = ""
+
+
+                except Exception as e:
+                    server_location_text.value = f"Server Location: Error: {e}"
+
+            except Exception as e:
+                status_text.value = f"Status: Error fetching game state: {e}"
+            page.update()
+            time.sleep(30)
+
+    threading.Thread(target=update_status, daemon=True).start()
+
     drag_start_x = 0
     drag_start_y = 0
 
@@ -108,7 +143,7 @@ def main(page: Page):
 
     close_button = IconButton(icon=Icons.CLOSE, icon_color=Colors.RED_500, on_click=close_app)
 
-    def reload_client(e):
+    def reload_client_click(e):
         try:
             client.activate()
             result_text.value = "Client reloaded successfully!"
@@ -116,7 +151,7 @@ def main(page: Page):
             result_text.value = f"Error: {err}"
         page.update()
 
-    reload_button = IconButton(icon=Icons.REFRESH, icon_color=Colors.BLUE_ACCENT_400, on_click=reload_client)
+    reload_button = IconButton(icon=Icons.REFRESH, icon_color=Colors.BLUE_ACCENT_400, on_click=reload_client_click)
 
     def check_side_click(e):
         try:
@@ -197,7 +232,7 @@ def main(page: Page):
                 controls=[
                     Text("VAL-Helper", color=Colors.WHITE, weight="bold"),
                     Row(
-                        controls=[reload_button, close_button], 
+                        controls=[reload_button, close_button],
                         alignment="end"
                     )
                 ],
@@ -218,6 +253,21 @@ def main(page: Page):
                 dodge_game_button,
                 remove_friends_button,
                 multiple_valorant_button,
+                # Swapped the order of server location and status
+                Row(
+                    controls=[
+                        Text("Status:", color=Colors.WHITE70),
+                        status_text,
+                    ],
+                    alignment=alignment.center,  # alignment.centerを正しく使用
+                ),
+                Row(
+                    controls=[
+                        Text("Server:", color=Colors.WHITE70),
+                        server_location_text,
+                    ],
+                    alignment=alignment.center,  # alignment.centerを正しく使用
+                ),
                 Container(
                     content=result_text,
                     alignment=alignment.center,
