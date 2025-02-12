@@ -131,7 +131,7 @@ def main(page: Page):
             except Exception as e:
                 status_text.value = f"Status: Error fetching game state: {e}"
             page.update()
-            time.sleep(30)
+            time.sleep(5)
 
     threading.Thread(target=update_status, daemon=True).start()
 
