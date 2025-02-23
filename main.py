@@ -24,18 +24,18 @@ import threading
 import os
 import psutil
 import time
+import json
 
 from api import Client
 from internal_api import ValorantInternal
 from game_utils import fetch_game_state
 from agent_mapping import AGENT_MAPPING
 
-
 def main(page: Page):
     root_dir = os.path.dirname(os.path.abspath(__file__))
     page.title = "VAL-Helper"
     page.window.width = 300
-    page.window.height = 460  # Increased height
+    page.window.height = 520  # Increased height to accommodate new buttons
     page.window.frameless = True
     page.window.icon = os.path.join(root_dir, "assets", "icon.ico")
     page.window.top = 100
@@ -46,11 +46,6 @@ def main(page: Page):
 
     client = Client(region="ap")
     valorant_internal = ValorantInternal()
-
-    try:
-        client.activate()
-    except Exception as e:
-        print(f"Failed to activate client: {e}")
 
     result_text = Text("", color=Colors.GREY_300, text_align="center")
     status_text = Text("Status: Initializing...", color=Colors.YELLOW_200, text_align="center")
@@ -124,7 +119,6 @@ def main(page: Page):
                     else:
                         server_location_text.value = ""
 
-
                 except Exception as e:
                     server_location_text.value = f"Server Location: Error: {e}"
 
@@ -196,7 +190,6 @@ def main(page: Page):
 
     remove_friends_button = ElevatedButton("Remove Friends", bgcolor=Colors.RED_700, color=Colors.WHITE, width=260, on_click=remove_all_friends)
 
-    # VALORANTを終了
     def multiple_valorant_click(e):
         try:
             killed = False
@@ -211,6 +204,30 @@ def main(page: Page):
         page.update()
 
     multiple_valorant_button = ElevatedButton("Multiple Valorant", bgcolor=Colors.PINK_ACCENT_700, color=Colors.WHITE, width=260, on_click=multiple_valorant_click)
+
+    def save_preferences_click(e):
+        try:
+            preferences = valorant_internal.get_preferences()
+            with open("preferences.json", "w") as f:
+                json.dump(preferences, f)
+            result_text.value = "Preferences saved successfully!"
+        except Exception as err:
+            result_text.value = f"Error: {err}"
+        page.update()
+
+    save_preferences_button = ElevatedButton("Save Preferences", bgcolor=Colors.GREEN_700, color=Colors.WHITE, width=260, on_click=save_preferences_click)
+
+    def load_preferences_click(e):
+        try:
+            with open("preferences.json", "r") as f:
+                preferences = json.load(f)
+            valorant_internal.set_preferences(preferences)
+            result_text.value = "Preferences loaded successfully!"
+        except Exception as err:
+            result_text.value = f"Error: {err}"
+        page.update()
+
+    load_preferences_button = ElevatedButton("Load Preferences", bgcolor=Colors.BLUE_700, color=Colors.WHITE, width=260, on_click=load_preferences_click)
 
     def header_pan_start(e: DragStartEvent):
         nonlocal drag_start_x, drag_start_y
@@ -253,20 +270,21 @@ def main(page: Page):
                 dodge_game_button,
                 remove_friends_button,
                 multiple_valorant_button,
-                # Swapped the order of server location and status
+                save_preferences_button,
+                load_preferences_button,
                 Row(
                     controls=[
                         Text("Status:", color=Colors.WHITE70),
                         status_text,
                     ],
-                    alignment=alignment.center,  # alignment.centerを正しく使用
+                    alignment=alignment.center,
                 ),
                 Row(
                     controls=[
                         Text("Server:", color=Colors.WHITE70),
                         server_location_text,
                     ],
-                    alignment=alignment.center,  # alignment.centerを正しく使用
+                    alignment=alignment.center,
                 ),
                 Container(
                     content=result_text,
@@ -278,7 +296,6 @@ def main(page: Page):
             horizontal_alignment="center",
         )
     )
-
 
 if __name__ == "__main__":
     flet.app(target=main)
